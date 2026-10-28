@@ -753,6 +753,7 @@ class Text(JupyterMixin):
 
         style_cache: Dict[Tuple[Style, ...], Style] = {}
         style_cache_get = style_cache.get
+        link_ids: Dict[str, str] = {}
         combine = Style.combine
 
         def get_current_style() -> Style:
@@ -762,6 +763,16 @@ class Text(JupyterMixin):
             if cached_style is not None:
                 return cached_style
             current_style = combine(styles)
+            link = current_style.link
+            if link:
+                canonical_id = link_ids.get(link)
+                if canonical_id is None:
+                    # First sighting in this render: mint a fresh id via a copy
+                    # (never mutate shared style objects).
+                    current_style = current_style.copy()
+                    link_ids[link] = current_style.link_id
+                elif current_style.link_id != canonical_id:
+                    current_style = current_style._with_link_id(canonical_id)
             style_cache[styles] = current_style
             return current_style
 
