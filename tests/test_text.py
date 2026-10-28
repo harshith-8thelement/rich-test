@@ -1127,3 +1127,136 @@ def test_soft_wrap_styled() -> None:
     # Background is reset before \n
     expected = "\x1b[34;47msoft wrap is on\x1b[0m\nNext line\n"
     assert output == expected
+
+
+_LINK_OPEN_RE = re.compile(r"\x1b\]8;id=([^;]*);([^\x1b]+)\x1b\\")
+_LOG_PATH = "/var/log/myapp.log"
+_UUID = "78351748-9b32-4e08-ade3-7e9ff124d541"
+_ISSUE_URL = "https://www.example.com/issues/42"
+_ISSUE_MARKUP = (
+    f"Error in job [link={_ISSUE_URL}]{_UUID}: see {_LOG_PATH}[/link] for details"
+)
+
+
+def _link_console(width: int) -> Console:
+    return Console(
+        file=StringIO(),
+        width=width,
+        color_system="truecolor",
+        force_terminal=True,
+        legacy_windows=False,
+    )
+
+
+def _print_and_get_links(markup: str, width: int):
+    console = _link_console(width)
+    console.print(markup)
+    output = console.file.getvalue()
+    return output, _LINK_OPEN_RE.findall(output)
+
+
+def test_highlighted_link_single_id() -> None:
+    """A highlighted link must render with a single link id (issue #4109)."""
+    _, opens = _print_and_get_links(_ISSUE_MARKUP, 200)
+    assert len(opens) > 1
+    assert len({link_id for link_id, _ in opens}) == 1
+    assert {url for _, url in opens} == {_ISSUE_URL}
+
+
+def test_wrapped_highlighted_link_single_id() -> None:
+    """A highlighted link that wraps over several lines keeps a single id."""
+    output, opens = _print_and_get_links(_ISSUE_MARKUP, 30)
+    assert output.count("\n") >= 3
+    assert len(opens) >= 3
+    assert len({link_id for link_id, _ in opens}) == 1
+    assert {url for _, url in opens} == {_ISSUE_URL}
+
+
+def test_wrapped_plain_link_single_id() -> None:
+    """A plain link that wraps over several lines keeps a single id."""
+    output, opens = _print_and_get_links(
+        "[link=https://a]plain words here and more words[/link]", 12
+    )
+    assert output.count("\n") >= 3
+    assert len(opens) >= 3
+    assert len({link_id for link_id, _ in opens}) == 1
+    assert {url for _, url in opens} == {"https://a"}
+
+
+def test_highlighted_link_keeps_highlight_colours() -> None:
+    console = _link_console(200)
+    segments = list(console.render_str(_ISSUE_MARKUP).render(console))
+
+    def find(text: str):
+        found = [segment for segment in segments if segment.text == text]
+        assert found, f"no segment with text {text!r}"
+        return found[0]
+
+    uuid_segment = find(_UUID)
+    path_segment = find("/var/log/")
+    filename_segment = find("myapp.log")
+
+    assert uuid_segment.style.color == console.get_style("repr.uuid").color
+    assert path_segment.style.color == console.get_style("repr.path").color
+    assert filename_segment.style.color == console.get_style("repr.filename").color
+
+    for segment in (uuid_segment, path_segment, filename_segment):
+        assert segment.style.link == _ISSUE_URL
+        assert segment.style.link_id
+        assert segment.style.link_id == uuid_segment.style.link_id
+
+
+def test_plain_link_single_id() -> None:
+    markup = "[link=https://x.com]plain words[/link]"
+    console = _link_console(80)
+    segments = list(console.render_str(markup).render(console))
+    linked = [segment for segment in segments if segment.style and segment.style.link]
+    assert len(linked) == 1
+    assert linked[0].text == "plain words"
+    assert linked[0].style.link == "https://x.com"
+    assert linked[0].style.link_id
+
+    _, opens = _print_and_get_links(markup, 80)
+    assert len(opens) == 1
+    assert len({link_id for link_id, _ in opens}) == 1
+
+
+def test_highlight_outside_link_unchanged() -> None:
+    console = _link_console(200)
+    markup = f"[link=https://a]some link text[/link] see {_LOG_PATH}"
+    segments = list(console.render_str(markup).render(console))
+    path_segment = next(segment for segment in segments if segment.text == "/var/log/")
+    assert path_segment.style.color == console.get_style("repr.path").color
+    assert not path_segment.style.link
+
+
+def test_distinct_url_links_distinct_ids() -> None:
+    _, opens = _print_and_get_links(
+        "[link=https://a]x[/link] [link=https://b]y[/link]", 80
+    )
+    assert {url for _, url in opens} == {"https://a", "https://b"}
+    assert len({link_id for link_id, _ in opens}) == 2
+
+
+def test_style_instance_link_spans() -> None:
+    text = Text(f"first {_UUID} second")
+    split = 6 + len(_UUID)
+    text.stylize(Style(link="https://a"), 0, split)
+    text.stylize(Style(link="https://b"), split, len(text))
+
+    def render_links():
+        console = _link_console(200)
+        console.print(text)
+        return _LINK_OPEN_RE.findall(console.file.getvalue())
+
+    first = render_links()
+    assert len(first) > 1
+    first_ids = {link_id for link_id, _ in first}
+    assert len(first_ids) == 2
+    assert {url for _, url in first} == {"https://a", "https://b"}
+    for url in ("https://a", "https://b"):
+        assert len({link_id for link_id, u in first if u == url}) == 1
+
+    second_ids = {link_id for link_id, _ in render_links()}
+    assert len(second_ids) == 2
+    assert not (first_ids & second_ids)

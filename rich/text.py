@@ -754,6 +754,9 @@ class Text(JupyterMixin):
         style_cache: Dict[Tuple[Style, ...], Style] = {}
         style_cache_get = style_cache.get
         combine = Style.combine
+        # Canonical link id per link URL, minted fresh for this render call.
+        link_ids: Dict[str, str] = {}
+        from .style import _id_generator
 
         def get_current_style() -> Style:
             """Construct current style from stack."""
@@ -762,6 +765,11 @@ class Text(JupyterMixin):
             if cached_style is not None:
                 return cached_style
             current_style = combine(styles)
+            link = current_style.link
+            if link:
+                canonical_id = link_ids.setdefault(link, f"{next(_id_generator)}")
+                if current_style._link_id != canonical_id:
+                    current_style = current_style._with_link_id(canonical_id)
             style_cache[styles] = current_style
             return current_style
 

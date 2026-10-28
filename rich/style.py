@@ -729,6 +729,31 @@ class Style:
         text = text or str(self)
         sys.stdout.write(f"{self.render(text)}\n")
 
+    def _with_link_id(self, link_id: str) -> "Style":
+        """Get a copy of this style carrying a specific link id.
+
+        Args:
+            link_id (str): The link id for the new style.
+
+        Returns:
+            Style: A new Style instance equal to this one, with the given link id.
+        """
+        if self._null:
+            return NULL_STYLE
+        style: Style = self.__new__(Style)
+        style._ansi = self._ansi
+        style._style_definition = self._style_definition
+        style._color = self._color
+        style._bgcolor = self._bgcolor
+        style._attributes = self._attributes
+        style._set_attributes = self._set_attributes
+        style._link = self._link
+        style._link_id = link_id
+        style._hash = self._hash
+        style._null = False
+        style._meta = self._meta
+        return style
+
     @lru_cache(maxsize=1024)
     def _add(self, style: Optional["Style"]) -> "Style":
         if style is None or style._null:
