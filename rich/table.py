@@ -498,7 +498,9 @@ class Table(JupyterMixin):
             text: TextType, style: StyleType, justify: "JustifyMethod" = "center"
         ) -> "RenderResult":
             render_text = (
-                console.render_str(text, style=style, highlight=False)
+                console.render_str(
+                    text, style=style, highlight=False, emoji=render_options.emoji
+                )
                 if isinstance(text, str)
                 else text
             )
