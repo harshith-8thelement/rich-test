@@ -406,6 +406,112 @@ def test_padding_width():
     assert output == expected
 
 
+def _emoji_table(cell: str = ":1234:") -> Table:
+    table = Table(title="title :smiley:", caption="caption :smiley:")
+    table.add_column("col")
+    table.add_row(cell)
+    return table
+
+
+def _emoji_console(emoji: bool, **kwargs) -> Console:
+    return Console(
+        file=io.StringIO(),
+        width=40,
+        color_system=None,
+        legacy_windows=False,
+        _environ={},
+        emoji=emoji,
+        **kwargs,
+    )
+
+
+def test_table_print_emoji_false_override():
+    console = _emoji_console(True)
+    console.print(_emoji_table(), emoji=False)
+    output = console.file.getvalue()
+    assert ":1234:" in output
+    assert output.count(":smiley:") == 2
+    assert "🔢" not in output
+    assert "😃" not in output
+
+
+def test_table_print_markup_and_emoji_false_override():
+    console = _emoji_console(True)
+    console.print(_emoji_table("[blue]x[/blue] :1234:"), markup=False, emoji=False)
+    output = console.file.getvalue()
+    assert "[blue]x[/blue]" in output
+    assert ":1234:" in output
+    assert "🔢" not in output
+
+
+def test_table_print_emoji_true_override():
+    console = _emoji_console(False)
+    console.print(_emoji_table(), emoji=True)
+    output = console.file.getvalue()
+    assert "🔢" in output
+    assert output.count("😃") == 2
+    assert ":1234:" not in output
+    assert ":smiley:" not in output
+
+
+def test_table_log_emoji_false_override():
+    console = _emoji_console(True, log_time=False, log_path=False)
+    console.log(_emoji_table(), emoji=False)
+    output = console.file.getvalue()
+    assert ":1234:" in output
+    assert "🔢" not in output
+
+
+def test_table_log_emoji_true_override():
+    console = _emoji_console(False, log_time=False, log_path=False)
+    console.log(_emoji_table(), emoji=True)
+    output = console.file.getvalue()
+    assert "🔢" in output
+    assert ":1234:" not in output
+
+
+@pytest.mark.parametrize("console_emoji", [True, False])
+def test_table_no_emoji_override_follows_console(console_emoji):
+    console = _emoji_console(console_emoji)
+    console.print(_emoji_table())
+    output = console.file.getvalue()
+    if console_emoji:
+        assert "🔢" in output
+        assert output.count("😃") == 2
+        assert ":1234:" not in output
+    else:
+        assert ":1234:" in output
+        assert output.count(":smiley:") == 2
+        assert "🔢" not in output
+        assert "😃" not in output
+
+    # Explicit override matching the console setting is identical to no override
+    other = _emoji_console(console_emoji)
+    other.print(_emoji_table(), emoji=console_emoji)
+    assert other.file.getvalue() == output
+
+
+@pytest.mark.parametrize("emoji", [True, False])
+def test_table_width_fits_displayed_text(emoji):
+    from rich.cells import cell_len
+
+    # Private Box instance: other tests in this module mutate box.ASCII
+    plain_box = box.Box("+-++\n| ||\n|-++\n| ||\n|-++\n|-++\n| ||\n+-++\n")
+    table = Table(box=plain_box)
+    table.add_column("a")
+    table.add_row(":1234:")
+    console = _emoji_console(not emoji)
+    console.print(table, emoji=emoji)
+    lines = console.file.getvalue().splitlines()
+    cell = ":1234:" if not emoji else "🔢"
+    # border + padding + content + padding + border
+    expected = 1 + 1 + cell_len(cell) + 1 + 1
+    assert len(lines) == 5
+    assert all(cell_len(line) == expected for line in lines)
+    assert cell in lines[3]
+    assert lines[3].endswith(" |")
+
+
 if __name__ == "__main__":
     render = render_tables()
     print(render)

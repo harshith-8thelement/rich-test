@@ -841,6 +841,17 @@ def test_update_options_markup() -> None:
     assert options.update(markup=True).markup == True
 
 
+def test_update_options_emoji() -> None:
+    console = Console()
+    options = console.options
+    assert options.emoji is None
+    assert options.update(emoji=False).emoji is False
+    assert options.update(emoji=True).emoji is True
+    disabled = options.update(emoji=False)
+    assert disabled.update(width=10).emoji is False
+    assert disabled.update(emoji=None).emoji is None
+
+
 def test_print_width_zero() -> None:
     console = Console()
     with console.capture() as capture:
